@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音MAD作者相関図メーカー</title>
+<meta name="description" content="作風に影響を受けた音MAD作者を挙げて、みんなで相関図を作る企画">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  :root {
+    --ink: #2e2e2a;
+    --paper: #fdfdfb;
+    --bg: #f7f7f4;
+    --line: #d8d8d2;
+    --muted: #77776f;
+    --faint: #9a9a92;
+    --err-bg: #fbeeed; --err-fg: #8f322d;
+    --ok-bg: #eef6ea;  --ok-fg: #3d6b33;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image: radial-gradient(#e4e4df 1px, transparent 1px);
+    background-size: 22px 22px;
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', sans-serif;
+    color: var(--ink);
+  }
+  header {
+    padding: 12px 20px;
+    background: var(--paper);
+    border-bottom: 3px solid var(--ink);
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: 0.04em; }
+  header p { font-size: 12px; margin: 0; color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px; position: relative; }
+  .field span { font-size: 11px; color: var(--muted); }
+  .field span.req { font-weight: bold; color: var(--ink); }
+  .field input {
+    padding: 9px 12px; border: 1px solid #b7b7b2; border-radius: 6px;
+    font-size: 14px; font-family: inherit; background: #fff;
+  }
+  .field input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  button.primary {
+    padding: 10px 22px; background: var(--ink); color: var(--paper);
+    border: none; border-radius: 6px; font-weight: bold; font-size: 14px;
+    font-family: inherit; cursor: pointer; flex-shrink: 0;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  .note { font-size: 11px; color: var(--faint); margin: 8px 0 0; line-height: 1.7; }
+  .msg { font-size: 12px; padding: 8px 12px; border-radius: 6px; margin-top: 8px; display: none; }
+  .msg.ok { display: block; background: var(--ok-bg); color: var(--ok-fg); }
+  .msg.err { display: block; background: var(--err-bg); color: var(--err-fg); }
+  /* サジェスト */
+  .suggest {
+    position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 30;
+    background: #fff; border: 1px solid #b7b7b2; border-radius: 8px;
+    overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,0.12); display: none;
+  }
+  .suggest.open { display: block; }
+  .suggest .head { font-size: 10px; color: var(--muted); background: #f0f0eb; padding: 4px 12px; }
+  .suggest button {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 12px; background: #fff; border: none; border-top: 1px solid #eeeee8;
+    font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  }
+  .suggest button:hover { background: #f7f7f2; }
+  .suggest .dot {
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid #a3a39e;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; flex-shrink: 0;
+  }
+  .suggest .nm { font-weight: bold; }
+  .suggest .deg { margin-left: auto; font-size: 10px; color: var(--faint); flex-shrink: 0; }
+  /* グラフ */
+  .graph-wrap { position: relative; overflow: hidden; padding: 0; }
+  .legend {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(253,253,251,0.92); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px;
+  }
+  .legend span.lab { font-size: 11px; color: var(--muted); margin-right: 2px; }
+  .legend i {
+    width: 24px; height: 24px; border-radius: 50%; border: 1px solid #a3a39e;
+    font-style: normal; font-size: 11px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .center-note { height: 380px; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--faint); }
+  footer { font-size: 11px; color: var(--faint); text-align: center; padding: 0 0 24px; }
+  footer a { color: var(--muted); }
+  #setupBanner {
+    display: none; background: #fff4e0; color: #8a5a10; border: 1px solid #e8cf9a;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; line-height: 1.8;
+  }
+  #setupBanner code { background: #fdf; padding: 1px 4px; border-radius: 3px; background: #f5ead0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>音MAD作者相関図メーカー</h1>
+  <p>作風に影響を受けた作者を1〜3人挙げてください。矢印は「あなた → 影響元」。図はリアルタイムで育ちます。</p>
+</header>
+
+<main>
+  <div id="setupBanner">
+    <b>[運営向け] Firebaseの設定がまだです。</b><br>
+    index.html内の <code>firebaseConfig</code> にFirebaseコンソールで取得した設定を貼り付けてください。手順はSETUP.mdを参照。
+  </div>
+
+  <section class="card">
+    <div class="form-row" style="margin-bottom:8px">
+      <div class="field" style="max-width:320px">
+        <span class="req">あなたの作者名</span>
+        <input id="inpName" placeholder="例: トリドリドル" autocomplete="off">
+        <div class="suggest" id="sugName"></div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <span class="req">影響元 1(必須)</span>
+        <input id="inpInf0" placeholder="作者名" autocomplete="off">
+        <div class="suggest" id="sugInf0"></div>
+      </div>
+      <div class="field">
+        <span>影響元 2(空欄でOK)</span>
+        <input id="inpInf1" placeholder="作者名" autocomplete="off">
+        <div class="suggest" id="sugInf1"></div>
+      </div>
+      <div class="field">
+        <span>影響元 3(空欄でOK)</span>
+        <input id="inpInf2" placeholder="作者名" autocomplete="off">
+        <div class="suggest" id="sugInf2"></div>
+      </div>
+      <button class="primary" id="btnSubmit">図に追加</button>
+    </div>
+    <p class="msg" id="msg"></p>
+    <p class="note">
+      ※ 影響元は1人だけでも2人でもOK。入力中に候補が出たら、できるだけ候補の表記に合わせてください(表記ゆれ防止)。<br>
+      ※ 回答は全員に公開されます。修正は同じ名前で再投稿(上書き)。削除したい場合は運営(<span id="adminContact">@あなたのXアカウント</span>)まで。
+    </p>
+  </section>
+
+  <section class="card graph-wrap">
+    <div class="legend">
+      <span class="lab">被言及数</span>
+      <i style="background:#ffffff">0</i><i style="background:#e3e3e3">1</i><i style="background:#f4a7a5">2</i>
+      <i style="background:#f7f2a3">3</i><i style="background:#a9e3a0">4</i><i style="background:#9fe4f2">5+</i>
+    </div>
+    <div class="center-note" id="graphNote">読み込み中…</div>
+    <svg id="graph" style="display:none"></svg>
+  </section>
+
+  <footer>
+    回答数: <span id="count">0</span> 人 / ノードはドラッグで動かせます。スクロールでズーム。
+    <a href="#" id="exportLink">データをJSONで保存</a>
+  </footer>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// =====================================================================
+// ★★★ ここにFirebaseコンソールで取得した設定を貼り付ける ★★★
+// (Firebaseコンソール → プロジェクトの設定 → マイアプリ → SDKの設定と構成)
+const firebaseConfig = {
+  apiKey: "AIzaSyALDuZhQsc1eZS-DBfA7xeISIGpuK1vRLI",
+  authDomain: "otomad-creator-relationship.firebaseapp.com",
+  projectId: "otomad-creator-relationship",
+  storageBucket: "otomad-creator-relationship.firebasestorage.app",
+  messagingSenderId: "509308314600",
+  appId: "1:509308314600:web:e0eca60878fe0f993f7a5d"
+};
+// =====================================================================
+
+// ---- 表記ゆれ対策の正規化(NFKC + 小文字化 + カタカナ→ひらがな + 空白除去) ----
+const kataToHira = s => s.replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60));
+const norm = s => kataToHira((s || "").normalize("NFKC").toLowerCase()).replace(/\s+/g, "");
+
+const DEGREE_COLORS = ["#ffffff", "#e3e3e3", "#f4a7a5", "#f7f2a3", "#a9e3a0", "#9fe4f2"];
+const degColor = n => DEGREE_COLORS[Math.min(n, 5)];
+
+const $ = id => document.getElementById(id);
+let subs = [];          // [{name, influences[], ts}]
+let candidates = [];    // [{name, deg}]
+const savedPos = new Map(); // ノード位置を投稿間で保持
+
+// ---- 未設定チェック ----
+if (firebaseConfig.apiKey === "ここに貼り付け") {
+  $("setupBanner").style.display = "block";
+  $("graphNote").textContent = "Firebase設定待ち(運営のセットアップが必要です)";
+}
+
+let db = null;
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+} catch (e) { /* 未設定時 */ }
+
+// ---- リアルタイム購読 ----
+if (db && firebaseConfig.apiKey !== "ここに貼り付け") {
+  onSnapshot(collection(db, "answers"), snap => {
+    subs = [];
+    snap.forEach(d => {
+      const v = d.data();
+      if (v && v.name && Array.isArray(v.influences)) subs.push(v);
+    });
+    rebuildCandidates();
+    renderGraph();
+    $("count").textContent = subs.length;
+  }, err => {
+    $("graphNote").textContent = "データの読み込みに失敗しました。時間をおいて再読み込みしてください。";
+    console.error(err);
+  });
+}
+
+function rebuildCandidates() {
+  const inDeg = new Map();
+  const names = new Set();
+  subs.forEach(s => {
+    names.add(s.name);
+    s.influences.forEach(t => {
+      names.add(t);
+      inDeg.set(t, (inDeg.get(t) || 0) + 1);
+    });
+  });
+  candidates = [...names].map(n => ({ name: n, deg: inDeg.get(n) || 0 }))
+    .sort((a, b) => b.deg - a.deg);
+}
+
+// ---- サジェスト ----
+function attachSuggest(inputId, boxId) {
+  const inp = $(inputId), box = $(boxId);
+  const close = () => { box.classList.remove("open"); };
+  const render = () => {
+    const nq = norm(inp.value);
+    if (!nq) return close();
+    const starts = [], includes = [];
+    for (const c of candidates) {
+      const nc = norm(c.name);
+      if (nc === nq && c.name === inp.value) continue;
+      if (nc.startsWith(nq)) starts.push(c);
+      else if (nc.includes(nq)) includes.push(c);
+    }
+    const hits = [...starts, ...includes].slice(0, 6);
+    if (hits.length === 0) return close();
+    box.innerHTML = '<div class="head">図に既にいる名前(タップで統一)</div>' +
+      hits.map(c =>
+        `<button type="button" data-name="${escapeAttr(c.name)}">
+           <span class="dot" style="background:${degColor(c.deg)}">${Math.min(c.deg,5)}${c.deg>5?"+":""}</span>
+           <span class="nm">${escapeHtml(c.name)}</span>
+           <span class="deg">被言及 ${c.deg}</span>
+         </button>`).join("");
+    box.classList.add("open");
+    box.querySelectorAll("button").forEach(b => {
+      b.addEventListener("mousedown", e => {
+        e.preventDefault();
+        inp.value = b.dataset.name;
+        close();
+      });
+    });
+  };
+  inp.addEventListener("input", render);
+  inp.addEventListener("focus", render);
+  inp.addEventListener("blur", () => setTimeout(close, 150));
+}
+const escapeHtml = s => s.replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+const escapeAttr = escapeHtml;
+
+attachSuggest("inpName", "sugName");
+attachSuggest("inpInf0", "sugInf0");
+attachSuggest("inpInf1", "sugInf1");
+attachSuggest("inpInf2", "sugInf2");
+
+// ---- 投稿 ----
+function showMsg(type, text) {
+  const el = $("msg");
+  el.className = "msg " + type;
+  el.textContent = text;
+}
+
+$("btnSubmit").addEventListener("click", async () => {
+  const n = $("inpName").value.trim();
+  const raw = [$("inpInf0").value, $("inpInf1").value, $("inpInf2").value];
+  const list = [...new Set(raw.map(s => s.trim()).filter(s => s && norm(s) !== norm(n)))].slice(0, 3);
+  if (!n) return showMsg("err", "作者名を入力してください。");
+  if (n.length > 30) return showMsg("err", "作者名は30文字以内でお願いします。");
+  if (list.length === 0) return showMsg("err", "影響を受けた作者を1人以上入力してください(1人だけでもOK)。");
+  if (list.some(s => s.length > 30)) return showMsg("err", "影響元の名前は30文字以内でお願いします。");
+  if (!db || firebaseConfig.apiKey === "ここに貼り付け")
+    return showMsg("err", "まだ運営のセットアップが完了していません。");
+
+  const btn = $("btnSubmit");
+  btn.disabled = true; btn.textContent = "保存中…";
+  try {
+    await setDoc(doc(db, "answers", encodeURIComponent(n)), {
+      name: n, influences: list, ts: Date.now()
+    });
+    showMsg("ok", `「${n}」の回答(影響元${list.length}人)を保存しました。同名で再投稿すると上書き修正できます。`);
+    $("inpName").value = ""; $("inpInf0").value = ""; $("inpInf1").value = ""; $("inpInf2").value = "";
+  } catch (e) {
+    console.error(e);
+    showMsg("err", "保存に失敗しました。時間をおいてもう一度お試しください。");
+  } finally {
+    btn.disabled = false; btn.textContent = "図に追加";
+  }
+});
+
+// ---- JSONエクスポート ----
+$("exportLink").addEventListener("click", e => {
+  e.preventDefault();
+  const blob = new Blob([JSON.stringify(subs, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `otomad_soukanzu_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ---- グラフ ----
+let sim = null;
+function renderGraph() {
+  const svgEl = $("graph"), note = $("graphNote");
+  const wrap = svgEl.parentElement;
+  const width = wrap.clientWidth || 900;
+  const height = Math.max(520, Math.round(width * 0.62));
+
+  const inDeg = new Map();
+  const nodeSet = new Set();
+  const links = [];
+  subs.forEach(s => {
+    nodeSet.add(s.name);
+    s.influences.forEach(t => {
+      nodeSet.add(t);
+      inDeg.set(t, (inDeg.get(t) || 0) + 1);
+      links.push({ source: s.name, target: t });
+    });
+  });
+  const nodes = [...nodeSet].map(id => {
+    const p = savedPos.get(id);
+    return { id, deg: inDeg.get(id) || 0, x: p?.x, y: p?.y };
+  });
+
+  if (nodes.length === 0) {
+    note.textContent = "まだ回答がありません。最初の1人になろう。";
+    note.style.display = "flex";
+    svgEl.style.display = "none";
+    return;
+  }
+  note.style.display = "none";
+  svgEl.style.display = "block";
+
+  if (sim) sim.stop();
+  const svg = d3.select(svgEl);
+  svg.selectAll("*").remove();
+  svg.attr("viewBox", [0, 0, width, height]).attr("width", "100%").attr("height", height);
+
+  const g = svg.append("g");
+  svg.call(d3.zoom().scaleExtent([0.25, 4]).on("zoom", ev => g.attr("transform", ev.transform)));
+
+  svg.append("defs").append("marker")
+    .attr("id", "arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 34).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#b7b7b2");
+
+  sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(120).strength(0.5))
+    .force("charge", d3.forceManyBody().strength(-360))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collide", d3.forceCollide(42));
+
+  const link = g.append("g").selectAll("line").data(links).join("line")
+    .attr("stroke", "#c9c9c4").attr("stroke-width", 1.2).attr("marker-end", "url(#arrow)");
+
+  const node = g.append("g").selectAll("g").data(nodes).join("g")
+    .attr("cursor", "grab")
+    .call(d3.drag()
+      .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  node.append("circle")
+    .attr("r", 28)
+    .attr("fill", d => degColor(d.deg))
+    .attr("stroke", "#a3a39e").attr("stroke-width", 1);
+
+  node.append("text")
+    .attr("text-anchor", "middle").attr("dy", "0.35em")
+    .attr("font-size", d => d.id.length > 6 ? 8 : 10)
+    .attr("fill", "#3a3a36").attr("pointer-events", "none")
+    .text(d => d.id.length > 10 ? d.id.slice(0, 9) + "…" : d.id);
+
+  const neighbor = new Map();
+  links.forEach(l => {
+    const s = typeof l.source === "object" ? l.source.id : l.source;
+    const t = typeof l.target === "object" ? l.target.id : l.target;
+    if (!neighbor.has(s)) neighbor.set(s, new Set());
+    if (!neighbor.has(t)) neighbor.set(t, new Set());
+    neighbor.get(s).add(t);
+    neighbor.get(t).add(s);
+  });
+
+  node.on("mouseenter", (ev, d) => {
+    const nb = neighbor.get(d.id) || new Set();
+    node.attr("opacity", o => (o.id === d.id || nb.has(o.id)) ? 1 : 0.15);
+    link.attr("opacity", l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.08);
+  }).on("mouseleave", () => {
+    node.attr("opacity", 1);
+    link.attr("opacity", 1);
+  });
+
+  sim.on("tick", () => {
+    link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    node.attr("transform", d => `translate(${d.x},${d.y})`);
+    nodes.forEach(d => savedPos.set(d.id, { x: d.x, y: d.y }));
+  });
+}
+
+window.addEventListener("resize", () => { if (subs.length) renderGraph(); });
+</script>
+</body>
+</html>
